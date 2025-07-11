@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 歴史学習アプリ</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter フォントの読み込み -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- React と ReactDOM の CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel を使用して JSX をブラウザで変換 -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // React コンポーネントの定義
+        const { useState } = React;
+
+        // メインのAppコンポーネント
+        const App = () => {
+          const [input, setInput] = useState(''); // ユーザーの入力
+          const [information, setInformation] = useState(''); // AIが生成した情報
+          const [testQuestions, setTestQuestions] = useState([]); // AIが生成したテスト問題
+          const [loading, setLoading] = useState(false); // ローディング状態
+          const [error, setError] = useState(''); // エラーメッセージ
+
+          // Gemini APIを呼び出す関数
+          const fetchData = async () => {
+            if (!input.trim()) {
+              setError('歴史上の人物や出来事を入力してください。');
+              return;
+            }
+
+            setLoading(true);
+            setError('');
+            setInformation('');
+            setTestQuestions([]);
+
+            try {
+              // Gemini APIへのプロンプトを構築
+              const prompt = `あなたは歴史の先生です。以下の歴史上の人物または出来事について、分かりやすい情報を提供し、それに関連する想定されるテスト問題を3つ生成してください。回答はJSON形式で、"information"と"testQuestions"（文字列の配列）の2つのキーを含めてください。
+
+入力: ${input}`;
+
+              let chatHistory = [];
+              chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+              const payload = {
+                contents: chatHistory,
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  responseSchema: {
+                    type: "OBJECT",
+                    properties: {
+                      "information": { "type": "STRING" },
+                      "testQuestions": {
+                        "type": "ARRAY",
+                        "items": { "type": "STRING" }
+                      }
+                    },
+                    "propertyOrdering": ["information", "testQuestions"]
+                  }
+                }
+              };
+
+              const apiKey = ""; // APIキーはCanvas環境で自動的に提供されます
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+              const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+
+              if (!response.ok) {
+                throw new Error(`APIエラー: ${response.statusText}`);
+              }
+
+              const result = await response.json();
+
+              if (result.candidates && result.candidates.length > 0 &&
+                  result.candidates[0].content && result.candidates[0].content.parts &&
+                  result.candidates[0].content.parts.length > 0) {
+                const jsonString = result.candidates[0].content.parts[0].text;
+                const parsedJson = JSON.parse(jsonString);
+
+                setInformation(parsedJson.information || '情報が見つかりませんでした。');
+                setTestQuestions(parsedJson.testQuestions || []);
+              } else {
+                setError('AIからの応答が期待された形式ではありませんでした。');
+              }
+            } catch (err) {
+              console.error('API呼び出し中にエラーが発生しました:', err);
+              setError(`情報の取得中にエラーが発生しました: ${err.message}`);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center p-4 font-sans">
+              <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200">
+                <h1 className="text-4xl font-extrabold text-center text-gray-800 mb-8">
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+                    AI 歴史学習アプリ
+                  </span>
+                </h1>
+
+                <div className="mb-6">
+                  <label htmlFor="history-input" className="block text-lg font-medium text-gray-700 mb-2">
+                    歴史上の人物や出来事を入力してください:
+                  </label>
+                  <input
+                    id="history-input"
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="例: 織田信長, 関ヶ原の戦い"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-800 text-lg shadow-sm"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        fetchData();
+                      }
+                    }}
+                  />
+                </div>
+
+                <button
+                  onClick={fetchData}
+                  disabled={loading}
+                  className={`w-full py-3 px-6 rounded-lg text-white font-semibold text-xl transition-all duration-300 ease-in-out shadow-md
+                    ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transform hover:-translate-y-1'}`}
+                >
+                  {loading ? (
+                    <div className="flex items-center justify-center">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      情報を取得中...
+                    </div>
+                  ) : (
+                    '学習開始'
+                  )}
+                </button>
+
+                {error && (
+                  <div className="mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg text-center shadow-sm">
+                    <p className="font-medium">{error}</p>
+                  </div>
+                )}
+
+                {information && (
+                  <div className="mt-8 p-6 bg-blue-50 rounded-xl shadow-inner border border-blue-200">
+                    <h2 className="text-2xl font-bold text-blue-800 mb-4 border-b-2 border-blue-300 pb-2">
+                      <span role="img" aria-label="情報">💡</span> 情報
+                    </h2>
+                    <p className="text-gray-800 leading-relaxed text-lg whitespace-pre-wrap">
+                      {information}
+                    </p>
+                  </div>
+                )}
+
+                {testQuestions.length > 0 && (
+                  <div className="mt-8 p-6 bg-purple-50 rounded-xl shadow-inner border border-purple-200">
+                    <h2 className="text-2xl font-bold text-purple-800 mb-4 border-b-2 border-purple-300 pb-2">
+                      <span role="img" aria-label="テスト問題">📝</span> 想定されるテスト問題
+                    </h2>
+                    <ul className="list-disc list-inside text-gray-800 space-y-3">
+                      {testQuestions.map((question, index) => (
+                        <li key={index} className="text-lg leading-relaxed pl-2">
+                          {question}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        // React アプリをルート要素にレンダリング
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
